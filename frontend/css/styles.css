@@ -75,6 +75,51 @@
     --btn-close-hover: #f87171;
     --btn-minimize: #eab308;
     --btn-maximize: #22c55e;
+
+    /* Theme mode flag */
+    --is-dark: 1;
+}
+
+/* ---- Light Theme ---- */
+:root[data-theme="light"] {
+    --bg-primary: #f5f5f7;
+    --bg-secondary: #ffffff;
+    --bg-tertiary: #eeeef2;
+    --bg-elevated: #ffffff;
+
+    --bg-modifier-hover: rgba(114, 84, 204, 0.06);
+    --bg-modifier-active: rgba(114, 84, 204, 0.12);
+    --bg-modifier-selected: rgba(114, 84, 204, 0.18);
+
+    --text-normal: #1a1a2e;
+    --text-muted: #6b6b80;
+    --text-link: #6c5ce7;
+
+    --accent-subtle: rgba(114, 84, 204, 0.12);
+
+    --border-normal: #d8d8e0;
+    --border-light: #e5e5ed;
+    --border-focus: #7254cc;
+
+    --scrollbar-thin-thumb: #c0c0cc;
+    --scrollbar-thin-track: transparent;
+    --scrollbar-auto-thumb: #a0a0b0;
+    --scrollbar-auto-track: #f0f0f4;
+
+    --elevation-low: 0 1px 0 rgba(0, 0, 0, 0.08), 0 1.5px 0 rgba(0, 0, 0, 0.04);
+    --elevation-medium: 0 4px 12px rgba(0, 0, 0, 0.1);
+    --elevation-high: 0 8px 32px rgba(0, 0, 0, 0.15);
+    --elevation-glow: 0 0 20px rgba(114, 84, 204, 0.12);
+
+    --glass-bg: rgba(255, 255, 255, 0.85);
+    --glass-bg-light: rgba(255, 255, 255, 0.7);
+
+    --btn-close: #ef4444;
+    --btn-close-hover: #dc2626;
+    --btn-minimize: #ca8a04;
+    --btn-maximize: #16a34a;
+
+    --is-dark: 0;
 }
 
 /* ---- Reset & Base ---- */

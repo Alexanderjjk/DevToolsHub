@@ -372,9 +372,17 @@ function showFormModal(title, fields) {
 }
 
 // ============================================================
-// TEMA (Violet accent por defecto)
+// TEMA (Violet accent por defecto + Dark/Light mode)
 // ============================================================
 function initTheme() {
+    // Restore dark/light mode
+    var savedThemeMode = localStorage.getItem('devtools-theme-mode') || 'dark';
+    if (savedThemeMode === 'light') {
+        document.documentElement.setAttribute('data-theme', 'light');
+    } else {
+        document.documentElement.removeAttribute('data-theme');
+    }
+
     const savedAccent = localStorage.getItem('devtools-accent');
     const savedAccentName = localStorage.getItem('devtools-accent-name') || 'violet';
     if (savedAccent) {
@@ -383,6 +391,30 @@ function initTheme() {
         document.documentElement.style.setProperty('--accent-active', shadeColor(savedAccent, -25));
     }
     setTimeout(() => { $$('.theme-color-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.color === savedAccentName)); }, 100);
+    // Update settings toggle if visible
+    setTimeout(updateThemeModeUI, 100);
+}
+
+function toggleThemeMode() {
+    var current = document.documentElement.getAttribute('data-theme');
+    if (current === 'light') {
+        document.documentElement.removeAttribute('data-theme');
+        localStorage.setItem('devtools-theme-mode', 'dark');
+    } else {
+        document.documentElement.setAttribute('data-theme', 'light');
+        localStorage.setItem('devtools-theme-mode', 'light');
+    }
+    updateThemeModeUI();
+    var isLight = !current;
+    showToast(isLight ? 'Modo claro' : 'Modo oscuro', 'success');
+}
+
+function updateThemeModeUI() {
+    var isLight = document.documentElement.getAttribute('data-theme') === 'light';
+    var cb = document.getElementById('sp-theme-mode-checkbox');
+    var tg = document.getElementById('sp-theme-mode-toggle');
+    if (cb) { cb.checked = isLight; }
+    if (tg) { tg.classList.toggle('active', isLight); }
 }
 
 function setAccentColor(color, name) {
@@ -1263,6 +1295,8 @@ function _renderSettingsContent() {
             '<div class="sp-section-title">Apariencia</div>' +
             '<div class="sp-row"><div class="sp-row-info"><span class="sp-label">Color de acento</span></div>' +
             '<button class="btn btn-sm btn-secondary" id="sp-theme-btn" style="font-size:11px;padding:4px 12px;">Cambiar</button></div>' +
+            '<div class="sp-row"><div class="sp-row-info"><span class="sp-label">Modo claro</span></div>' +
+            '<label class="settings-toggle" id="sp-theme-mode-toggle"><input type="checkbox" id="sp-theme-mode-checkbox"><span class="settings-toggle-track"><span class="settings-toggle-thumb"></span></span></label></div>' +
             '<div class="sp-row"><div class="sp-row-info"><span class="sp-label">Sidebar colapsada</span></div>' +
             '<label class="settings-toggle" id="sp-sidebar-toggle"><input type="checkbox" id="sp-sidebar-checkbox"><span class="settings-toggle-track"><span class="settings-toggle-thumb"></span></span></label></div>' +
         '</div>' +
@@ -1355,6 +1389,15 @@ function _bindSettingsEvents(body) {
     // Theme
     var themeBtn = body.querySelector('#sp-theme-btn');
     if (themeBtn) themeBtn.onclick = function(e) { e.stopPropagation(); toggleThemePicker(true); };
+
+    // Theme mode (dark/light) toggle
+    var themeModeToggle = body.querySelector('#sp-theme-mode-toggle');
+    var themeModeCb = body.querySelector('#sp-theme-mode-checkbox');
+    if (themeModeToggle && themeModeCb) {
+        themeModeCb.checked = document.documentElement.getAttribute('data-theme') === 'light';
+        themeModeToggle.classList.toggle('active', themeModeCb.checked);
+        themeModeCb.onchange = function() { toggleThemeMode(); };
+    }
 
     // Sidebar toggle
     var sidebarToggle = body.querySelector('#sp-sidebar-toggle');

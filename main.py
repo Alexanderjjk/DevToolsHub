@@ -12,6 +12,35 @@ import time
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
 
+# Window state file (saved/restored between sessions)
+_WINDOW_STATE_FILE = os.path.join(BASE_DIR, "backend", "data", "window_state.json")
+
+def _load_window_state():
+    """Load saved window size and position from JSON file."""
+    try:
+        if os.path.exists(_WINDOW_STATE_FILE):
+            with open(_WINDOW_STATE_FILE, 'r') as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {}
+
+def _save_window_state(window):
+    """Save current window size and position to JSON file."""
+    try:
+        import webview
+        # Get current window dimensions
+        width = window.width
+        height = window.height
+        x = window.x
+        y = window.y
+        state = {"width": width, "height": height, "x": x, "y": y}
+        os.makedirs(os.path.dirname(_WINDOW_STATE_FILE), exist_ok=True)
+        with open(_WINDOW_STATE_FILE, 'w') as f:
+            json.dump(state, f)
+    except Exception:
+        pass  # Silently fail — non-critical feature
+
 sys.path.insert(0, os.path.join(BASE_DIR, "backend"))
 
 # Import database and init
@@ -424,11 +453,15 @@ def main():
     except Exception as e:
         print(f"[Hotkeys] WARNING: Could not register global hotkeys: {e}")
 
+    # Restore saved window size/position, or use defaults
+    _ws = _load_window_state()
     window_kwargs = {
         "title": "DevTools",
         "url": os.path.join(FRONTEND_DIR, "index.html"),
-        "width": 1280,
-        "height": 800,
+        "width": _ws.get("width", 1280),
+        "height": _ws.get("height", 800),
+        "x": _ws.get("x"),
+        "y": _ws.get("y"),
         "min_size": (900, 600),
         "frameless": True,
         "easy_drag": False,
@@ -437,12 +470,6 @@ def main():
     }
 
     window = webview.create_window(**window_kwargs)
-
-    # Register the on_closing callback so Alt+F4 / native close respects minimize-to-tray setting
-    try:
-        window.events.closing += on_closing
-    except Exception:
-        pass
 
     print("=" * 50)
     print("  DevTools v0.9.6")
@@ -454,6 +481,16 @@ def main():
     def on_loaded():
         """After window loads, create system tray icon."""
         _create_tray_icon(api_instance)
+
+    def on_closing_save_state():
+        """Save window state before closing, then proceed with tray logic."""
+        _save_window_state(window)
+        return on_closing()
+
+    try:
+        window.events.closing += on_closing_save_state
+    except Exception:
+        pass
 
     webview.start(debug=False, func=on_loaded)
 

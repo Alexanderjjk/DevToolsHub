@@ -607,10 +607,19 @@ class Api:
 
             # Get process name from PID
             import subprocess as _subprocess
+            import platform as _platform
+            _no_window = 0
+            _startupinfo = None
+            if _platform.system() == 'Windows':
+                _no_window = _subprocess.CREATE_NO_WINDOW
+                _startupinfo = _subprocess.STARTUPINFO()
+                _startupinfo.dwFlags |= _subprocess.STARTF_USESHOWWINDOW
+                _startupinfo.wShowWindow = _subprocess.SW_HIDE
             try:
                 result = _subprocess.run(
                     ['tasklist', '/FI', f'PID eq {pid.value}', '/FO', 'CSV', '/NH'],
-                    capture_output=True, text=True, timeout=3
+                    capture_output=True, text=True, timeout=3,
+                    startupinfo=_startupinfo, creationflags=_no_window
                 )
                 if result.stdout:
                     # Parse CSV: "name","pid","session","session#","mem"

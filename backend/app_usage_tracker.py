@@ -280,13 +280,18 @@ def _get_running_process_names():
     
     names = set()
     no_window = subprocess.CREATE_NO_WINDOW if platform.system() == 'Windows' else 0
+    startupinfo = None
+    if platform.system() == 'Windows':
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startupinfo.wShowWindow = subprocess.SW_HIDE
     if platform.system() == 'Windows':
         # Metodo 1: wmic (mas rapido que tasklist)
         try:
             result = subprocess.run(
                 ['wmic', 'process', 'get', 'name', '/FORMAT:CSV'],
                 capture_output=True, text=True, timeout=3,
-                creationflags=no_window
+                startupinfo=startupinfo, creationflags=no_window
             )
             for line in result.stdout.strip().split('\n'):
                 line = line.strip()
@@ -305,7 +310,7 @@ def _get_running_process_names():
                 result = subprocess.run(
                     ['tasklist', '/FO', 'CSV', '/NH'],
                     capture_output=True, text=True, timeout=3,
-                    creationflags=no_window
+                    startupinfo=startupinfo, creationflags=no_window
                 )
                 for line in result.stdout.strip().split('\n'):
                     if line and line.startswith('"'):
