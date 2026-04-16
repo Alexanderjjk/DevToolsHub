@@ -1,13 +1,4 @@
-"""
-DevTools — Generador de icono (.ico) para la aplicacion.
 
-Genera un icono profesional con formas geometricas (gear + code brackets)
-usando Pillow. El icono se guarda en frontend/icon.ico.
-
-Uso:
-    python generate_icon.py
-    python generate_icon.py --output mi_icono.ico --size 256
-"""
 import argparse
 import os
 import sys
@@ -20,7 +11,6 @@ except ImportError:
     sys.exit(1)
 
 
-# ── Colores (paleta Catppuccin Mocha) ──────────────────────────────────
 BG_DARK    = (30, 30, 46)       # #1e1e2e  base
 BG_MID     = (49, 50, 68)       # #313244  surface0
 ACCENT     = (137, 180, 250)    # #89b4fa  blue
