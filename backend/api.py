@@ -579,7 +579,11 @@ class Api:
     # ============================================
 
     def get_foreground_window_info(self):
-        """Return info about the currently focused window (Windows only)."""
+        """Return info about the currently focused window (Windows only).
+        
+        Uses pure Win32 ctypes API — NO subprocess calls.
+        This avoids CMD window flashing when compiled to EXE with PyInstaller.
+        """
         import platform
         if platform.system() != 'Windows':
             return {"app_name": "N/A", "window_title": "N/A", "platform": platform.system()}
@@ -601,37 +605,45 @@ class Api:
             else:
                 window_title = ""
 
-            # Get process ID
+            # Get process ID from window
             pid = ctypes.wintypes.DWORD()
             ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
 
-            # Get process name from PID
-            import subprocess as _subprocess
-            import platform as _platform
-            _no_window = 0
-            _startupinfo = None
-            if _platform.system() == 'Windows':
-                _no_window = _subprocess.CREATE_NO_WINDOW
-                _startupinfo = _subprocess.STARTUPINFO()
-                _startupinfo.dwFlags |= _subprocess.STARTF_USESHOWWINDOW
-                _startupinfo.wShowWindow = _subprocess.SW_HIDE
+            # Get process name using pure ctypes (NO subprocess/tasklist)
+            # This avoids CMD window flashing in compiled EXE
+            app_name = "Unknown"
             try:
-                result = _subprocess.run(
-                    ['tasklist', '/FI', f'PID eq {pid.value}', '/FO', 'CSV', '/NH'],
-                    capture_output=True, text=True, timeout=3,
-                    startupinfo=_startupinfo, creationflags=_no_window
+                PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+                handle = ctypes.windll.kernel32.OpenProcess(
+                    PROCESS_QUERY_LIMITED_INFORMATION, False, pid.value
                 )
-                if result.stdout:
-                    # Parse CSV: "name","pid","session","session#","mem"
-                    parts = result.stdout.strip().strip('"').split('","')
-                    if len(parts) >= 1:
-                        app_name = parts[0].strip('"')
-                    else:
-                        app_name = "Unknown"
-                else:
-                    app_name = "Unknown"
+                if handle:
+                    try:
+                        # Try QueryFullProcessImageNameW first (most reliable)
+                        buf_size = ctypes.wintypes.DWORD(1024)
+                        exe_buf = ctypes.create_unicode_buffer(1024)
+                        success = ctypes.windll.kernel32.QueryFullProcessImageNameW(
+                            handle, 0, exe_buf, ctypes.byref(buf_size)
+                        )
+                        if success and exe_buf.value:
+                            app_name = os.path.basename(exe_buf.value)
+                        else:
+                            # Fallback: GetModuleFileNameExW
+                            try:
+                                exe_buf2 = ctypes.create_unicode_buffer(1024)
+                                ctypes.windll.psapi.GetModuleFileNameExW(
+                                    handle, None, exe_buf2, 1024
+                                )
+                                if exe_buf2.value:
+                                    app_name = os.path.basename(exe_buf2.value)
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+                    finally:
+                        ctypes.windll.kernel32.CloseHandle(handle)
             except Exception:
-                app_name = "Unknown"
+                pass
 
             return {
                 "app_name": app_name,

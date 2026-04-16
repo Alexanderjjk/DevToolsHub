@@ -266,11 +266,9 @@ _PROCESS_CACHE_TTL = 1.5  # Cache valido por 1.5s (menor que el intervalo de 2s)
 def _get_running_process_names():
     """Retorna un set con los nombres de procesos corriendo en el sistema.
     
-    Optimizado:
-    - Usa wmic (mas rapido que tasklist) con fallback a tasklist
-    - Cachea el resultado para evitar llamadas subprocess repetidas
-    - Timeout reducido a 3s (antes 10s)
-    - CREATE_NO_WINDOW para evitar ventana flash en Windows
+    Usa Win32 Toolhelp32 API via ctypes — NO subprocess calls.
+    Esto evita que se abra una ventana CMD en apps compiladas a EXE con PyInstaller.
+    Mas rapido que wmic/tasklist y no tiene problemas de flashing.
     """
     global _process_cache, _process_cache_time
     
@@ -279,37 +277,62 @@ def _get_running_process_names():
         return _process_cache
     
     names = set()
-    no_window = subprocess.CREATE_NO_WINDOW if platform.system() == 'Windows' else 0
-    startupinfo = None
+    
     if platform.system() == 'Windows':
-        startupinfo = subprocess.STARTUPINFO()
-        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-        startupinfo.wShowWindow = subprocess.SW_HIDE
-    if platform.system() == 'Windows':
-        # Metodo 1: wmic (mas rapido que tasklist)
         try:
-            result = subprocess.run(
-                ['wmic', 'process', 'get', 'name', '/FORMAT:CSV'],
-                capture_output=True, text=True, timeout=3,
-                startupinfo=startupinfo, creationflags=no_window
+            import ctypes
+            import ctypes.wintypes as wintypes
+            
+            TH32CS_SNAPPROCESS = 0x00000002
+            MAX_PATH = 260
+            
+            class PROCESSENTRY32W(ctypes.Structure):
+                _fields_ = [
+                    ('dwSize', wintypes.DWORD),
+                    ('cntUsage', wintypes.DWORD),
+                    ('th32ProcessID', wintypes.DWORD),
+                    ('th32DefaultHeapID', ctypes.POINTER(ctypes.c_ulong)),
+                    ('th32ModuleID', wintypes.DWORD),
+                    ('cntThreads', wintypes.DWORD),
+                    ('th32ParentProcessID', wintypes.DWORD),
+                    ('pcPriClassBase', ctypes.c_long),
+                    ('dwFlags', wintypes.DWORD),
+                    ('szExeFile', wintypes.WCHAR * MAX_PATH),
+                ]
+            
+            INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
+            snapshot = ctypes.windll.kernel32.CreateToolhelp32Snapshot(
+                TH32CS_SNAPPROCESS, 0
             )
-            for line in result.stdout.strip().split('\n'):
-                line = line.strip()
-                if line and not line.startswith('Node,Name') and not line.startswith('Name'):
-                    parts = line.rsplit(',', 1)
-                    if len(parts) == 2:
-                        name = parts[1].strip().lower()
-                        if name:
-                            names.add(name)
+            
+            if snapshot != INVALID_HANDLE_VALUE and snapshot is not None:
+                try:
+                    entry = PROCESSENTRY32W()
+                    entry.dwSize = ctypes.sizeof(PROCESSENTRY32W)
+                    
+                    if ctypes.windll.kernel32.Process32FirstW(snapshot, ctypes.byref(entry)):
+                        while True:
+                            exe_name = entry.szExeFile
+                            if exe_name:
+                                names.add(exe_name.lower())
+                            if not ctypes.windll.kernel32.Process32NextW(snapshot, ctypes.byref(entry)):
+                                break
+                except Exception:
+                    pass
+                finally:
+                    ctypes.windll.kernel32.CloseHandle(snapshot)
         except Exception:
-            pass
-        
-        # Metodo 2: tasklist como fallback
-        if not names:
+            # Fallback to subprocess only if ctypes fails (very rare)
+            no_window = subprocess.CREATE_NO_WINDOW if platform.system() == 'Windows' else 0
+            startupinfo = None
+            if platform.system() == 'Windows':
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = subprocess.SW_HIDE
             try:
                 result = subprocess.run(
                     ['tasklist', '/FO', 'CSV', '/NH'],
-                    capture_output=True, text=True, timeout=3,
+                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=3,
                     startupinfo=startupinfo, creationflags=no_window
                 )
                 for line in result.stdout.strip().split('\n'):

@@ -219,6 +219,36 @@ class ApiWithQuickNotes(Api):
             pass
         return {"success": True}
 
+    def resize_window(self, width, height):
+        """Resize the main window to the given dimensions."""
+        import webview
+        try:
+            webview.windows[0].resize(int(width), int(height))
+        except Exception:
+            pass
+        return {"success": True}
+
+    def resize_and_move_window(self, width, height, x, y):
+        """Resize and reposition the window atomically.
+        Needed for west/north resizes where the opposite edge must stay anchored."""
+        import webview
+        try:
+            win = webview.windows[0]
+            win.resize(int(width), int(height))
+            win.move(int(x), int(y))
+        except Exception:
+            pass
+        return {"success": True}
+
+    def get_window_position(self):
+        """Return current window position {x, y} for resize calculations."""
+        import webview
+        try:
+            win = webview.windows[0]
+            return {"x": win.x, "y": win.y}
+        except Exception:
+            return {"x": 0, "y": 0}
+
     _closing = False
 
     def close_window(self):
@@ -462,10 +492,11 @@ def main():
         "height": _ws.get("height", 800),
         "x": _ws.get("x"),
         "y": _ws.get("y"),
-        "min_size": (900, 600),
+        "min_size": (800, 500),
         "frameless": True,
         "easy_drag": False,
         "text_select": True,
+        "resizable": True,
         "js_api": api_instance,
     }
 
