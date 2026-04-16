@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Quick Notes</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', -apple-system, sans-serif;
+            background: rgba(15, 15, 17, 0.0);
+            color: #e8e8ed;
+            height: 100vh;
+            overflow: hidden;
+            border-radius: 12px;
+            border: 1px solid rgba(114, 84, 204, 0.3);
+        }
+        .qn-glass {
+            background: rgba(26, 26, 46, 0.85);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            border-radius: 12px;
+        }
+        .qn-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 14px;
+            border-bottom: 1px solid rgba(42, 42, 69, 0.6);
+            cursor: default;
+            user-select: none;
+            -webkit-app-region: drag;
+            flex-shrink: 0;
+            position: relative;
+        }
+        .qn-header-left { display: flex; align-items: center; gap: 8px; }
+        .qn-header h3 { font-size: 13px; font-weight: 600; color: #8888a0; }
+        .qn-header-right { display: flex; align-items: center; gap: 6px; -webkit-app-region: no-drag; }
+        .qn-count { font-size: 10px; color: #8888a0; background: rgba(42,42,69,0.5); padding: 2px 8px; border-radius: 10px; }
+        .qn-close {
+            width: 20px; height: 20px; border-radius: 50%; border: none;
+            background: rgba(239, 68, 68, 0.8); color: white; font-size: 11px;
+            cursor: pointer; display: flex; align-items: center; justify-content: center;
+            transition: background 0.15s;
+        }
+        .qn-close:hover { background: #ef4444; }
+        .qn-save-indicator {
+            position: absolute;
+            bottom: -2px;
+            right: 14px;
+            font-size: 10px;
+            color: #22c55e;
+            opacity: 0;
+            transition: opacity 0.3s;
+            pointer-events: none;
+        }
+        .qn-save-indicator.visible { opacity: 1; }
+
+        /* THE KEY FIX: flex:1 1 0 + min-height:0 */
+        .qn-body {
+            flex: 1 1 0;
+            min-height: 0;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+        .qn-search {
+            flex-shrink: 0;
+            padding: 6px 8px 4px;
+        }
+        .qn-search-input {
+            width: 100%;
+            background: rgba(37, 37, 64, 0.6);
+            border: 1px solid rgba(42, 42, 69, 0.6);
+            border-radius: 6px;
+            padding: 5px 10px;
+            color: #e8e8ed;
+            font-size: 11px;
+            font-family: inherit;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .qn-search-input:focus { border-color: rgba(114, 84, 204, 0.5); }
+        .qn-search-input::placeholder { color: #555; }
+
+        .qn-list {
+            flex: 1 1 0;
+            min-height: 0;
+            overflow-y: auto;
+            padding: 2px 8px 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .qn-item {
+            background: rgba(37, 37, 64, 0.4);
+            border: 1px solid transparent;
+            border-radius: 5px;
+            padding: 6px 28px 6px 10px;
+            position: relative;
+            transition: border-color 0.15s;
+            cursor: default;
+            flex-shrink: 0;
+        }
+        .qn-item:hover { border-color: rgba(114, 84, 204, 0.4); }
+        .qn-item-content {
+            font-size: 12px;
+            line-height: 1.35;
+            white-space: pre-wrap;
+            word-break: break-word;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        .qn-item.expanded .qn-item-content {
+            -webkit-line-clamp: unset;
+            max-height: none;
+        }
+        .qn-item-meta {
+            font-size: 9px;
+            color: #555;
+            margin-top: 1px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .qn-item-expand {
+            font-size: 9px;
+            color: #7254cc;
+            cursor: pointer;
+            display: none;
+            user-select: none;
+        }
+        .qn-item-expand:hover { text-decoration: underline; }
+        .qn-item.needs-expand .qn-item-expand { display: inline; }
+        .qn-item-actions {
+            position: absolute;
+            top: 5px;
+            right: 4px;
+            display: flex;
+            gap: 2px;
+            opacity: 0;
+            transition: opacity 0.15s;
+        }
+        .qn-item:hover .qn-item-actions { opacity: 1; }
+        .qn-item-actions button {
+            width: 20px; height: 20px; border-radius: 4px;
+            border: none; background: transparent; color: #8888a0;
+            cursor: pointer; font-size: 11px; display: flex;
+            align-items: center; justify-content: center;
+            transition: all 0.15s;
+        }
+        .qn-item-actions button:hover { background: rgba(114,84,204,0.2); color: #7254cc; }
+        .qn-item-actions button.qn-del-btn:hover { background: rgba(239,68,68,0.2); color: #ef4444; }
+        .qn-item-content.editing {
+            -webkit-line-clamp: unset;
+            background: rgba(37, 37, 64, 0.8);
+            border: 1px solid #7254cc;
+            border-radius: 4px;
+            padding: 6px 8px;
+            outline: none;
+            min-height: 36px;
+            width: 100%;
+            font-family: inherit;
+            font-size: 12px;
+            line-height: 1.35;
+            color: #e8e8ed;
+            resize: vertical;
+            display: block;
+        }
+        .qn-empty {
+            text-align: center;
+            color: #8888a0;
+            padding: 20px 10px;
+            font-size: 12px;
+        }
+
+        /* Input area - fixed at bottom */
+        .qn-input-area {
+            flex-shrink: 0;
+            padding: 10px;
+            border-top: 1px solid rgba(42, 42, 69, 0.6);
+        }
+        .qn-input {
+            width: 100%;
+            background: rgba(37, 37, 64, 0.8);
+            border: 1px solid rgba(42, 42, 69, 0.8);
+            border-radius: 8px;
+            padding: 8px 12px;
+            color: #e8e8ed;
+            font-size: 13px;
+            font-family: inherit;
+            resize: none;
+            outline: none;
+            min-height: 44px;
+            max-height: 100px;
+            transition: border-color 0.2s;
+        }
+        .qn-input:focus { border-color: #7254cc; }
+        .qn-input::placeholder { color: #8888a0; }
+        .qn-input-row { display: flex; gap: 8px; margin-top: 6px; align-items: center; }
+        .qn-add-btn {
+            flex: 1;
+            padding: 7px;
+            background: #7254cc;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .qn-add-btn:hover { background: #8b6fdb; }
+        .qn-add-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .qn-hint { font-size: 10px; color: #555; white-space: nowrap; }
+
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(42, 42, 69, 0.8); border-radius: 2px; }
+    </style>
+</head>
+<body>
+    <div class="qn-glass">
+        <div class="qn-header">
+            <div class="qn-header-left">
+                <h3>&#128221; Quick Notes</h3>
+                <span class="qn-count" id="qn-count">0</span>
+            </div>
+            <div class="qn-header-right">
+                <button class="qn-close" id="qn-close">&times;</button>
+            </div>
+            <div class="qn-save-indicator" id="qn-save-indicator">Guardado</div>
+        </div>
+        <div class="qn-body">
+            <div class="qn-search">
+                <input class="qn-search-input" id="qn-search" type="text" placeholder="Buscar notas...">
+            </div>
+            <div class="qn-list" id="qn-list"></div>
+        </div>
+        <div class="qn-input-area">
+            <textarea class="qn-input" id="qn-input" placeholder="Escribe una nota rapida..." rows="2"></textarea>
+            <div class="qn-input-row">
+                <button class="qn-add-btn" id="qn-add" disabled>+ Agregar</button>
+                <span class="qn-hint">Ctrl+Enter</span>
+            </div>
+        </div>
+    </div>
+    <script>
+        var qnList = document.getElementById('qn-list');
+        var qnInput = document.getElementById('qn-input');
+        var qnAdd = document.getElementById('qn-add');
+        var qnClose = document.getElementById('qn-close');
+        var qnSave = document.getElementById('qn-save-indicator');
+        var qnCount = document.getElementById('qn-count');
+        var qnSearch = document.getElementById('qn-search');
+        var allNotes = [];
+
+        function api() { return (window.pywebview && window.pywebview.api) ? window.pywebview.api : null; }
+
+        function escapeHtml(text) {
+            var d = document.createElement('div');
+            d.textContent = text;
+            return d.innerHTML;
+        }
+
+        function formatDate(ts) {
+            var d = new Date(parseFloat(ts || 0) * 1000);
+            return d.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }) + ' ' +
+                   d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+        }
+
+        function renderNotes(filter) {
+            filter = (filter || '').toLowerCase();
+            var filtered = allNotes.filter(function(n) {
+                if (!filter) return true;
+                var text = (n.title || '') + ' ' + (n.content || '');
+                return text.toLowerCase().indexOf(filter) !== -1;
+            });
+            if (filtered.length === 0) {
+                qnList.innerHTML = allNotes.length === 0
+                    ? '<div class="qn-empty">Sin notas rapidas.<br><small>Escribe abajo y presiona Ctrl+Enter</small></div>'
+                    : '<div class="qn-empty">Sin resultados</div>';
+                qnCount.textContent = allNotes.length;
+                return;
+            }
+            qnCount.textContent = allNotes.length;
+            qnList.innerHTML = filtered.map(function(n) {
+                var content = escapeHtml(n.content || n.title || '');
+                var isLong = content.length > 100;
+                var date = formatDate(n.updated_at || n.created_at);
+                return '<div class="qn-item' + (isLong ? ' needs-expand' : '') + '" data-id="' + n.id + '">' +
+                    '<div class="qn-item-content" data-id="' + n.id + '">' + content + '</div>' +
+                    '<div class="qn-item-meta"><span>' + date + '</span>' +
+                    (isLong ? '<span class="qn-item-expand" data-id="' + n.id + '">ver mas</span>' : '') +
+                    '</div>' +
+                    '<div class="qn-item-actions">' +
+                    '<button class="qn-edit-btn" data-id="' + n.id + '" title="Editar">&#9998;</button>' +
+                    '<button class="qn-del-btn" data-id="' + n.id + '" title="Eliminar">&times;</button>' +
+                    '</div></div>';
+            }).join('');
+            bindItemEvents();
+        }
+
+        function bindItemEvents() {
+            qnList.querySelectorAll('.qn-item-expand').forEach(function(el) {
+                el.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    var item = el.closest('.qn-item');
+                    if (item.classList.contains('expanded')) {
+                        item.classList.remove('expanded');
+                        el.textContent = 'ver mas';
+                    } else {
+                        item.classList.add('expanded');
+                        el.textContent = 'ver menos';
+                    }
+                });
+            });
+            qnList.querySelectorAll('.qn-del-btn').forEach(function(btn) {
+                btn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    var a = api(); if (!a) return;
+                    a.delete_note(btn.dataset.id).then(function() { loadNotes(); }).catch(function() {});
+                });
+            });
+            qnList.querySelectorAll('.qn-edit-btn').forEach(function(btn) {
+                btn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    startEdit(btn.closest('.qn-item'), btn.dataset.id);
+                });
+            });
+        }
+
+        function startEdit(item, noteId) {
+            var contentEl = item.querySelector('.qn-item-content');
+            var currentText = contentEl.textContent;
+            var textarea = document.createElement('textarea');
+            textarea.className = 'qn-item-content editing';
+            textarea.value = currentText;
+            contentEl.replaceWith(textarea);
+            textarea.focus();
+            textarea.selectionStart = textarea.value.length;
+            var editBtn = item.querySelector('.qn-edit-btn');
+            if (editBtn) editBtn.style.display = 'none';
+
+            function save() {
+                var newText = textarea.value.trim();
+                if (newText && newText !== currentText) {
+                    var a = api();
+                    if (a) {
+                        a.update_note(noteId, newText.substring(0, 60), newText)
+                            .then(function() { loadNotes(); })
+                            .catch(function() { loadNotes(); });
+                    } else { loadNotes(); }
+                } else { loadNotes(); }
+            }
+            textarea.addEventListener('blur', save);
+            textarea.addEventListener('keydown', function(ev) {
+                if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); textarea.blur(); }
+                if (ev.key === 'Escape') { textarea.value = currentText; textarea.blur(); }
+            });
+        }
+
+        qnInput.addEventListener('input', function() {
+            qnAdd.disabled = !qnInput.value.trim();
+        });
+
+        qnSearch.addEventListener('input', function() {
+            renderNotes(qnSearch.value);
+        });
+
+        async function loadNotes() {
+            var a = api();
+            if (!a) { qnList.innerHTML = '<div class="qn-empty">Cargando...</div>'; return; }
+            try {
+                allNotes = await a.get_quick_notes();
+                allNotes.reverse();
+                renderNotes(qnSearch.value);
+            } catch (e) {
+                qnList.innerHTML = '<div class="qn-empty">Error cargando notas</div>';
+            }
+        }
+
+        async function addNote() {
+            var text = qnInput.value.trim();
+            if (!text) return;
+            var a = api(); if (!a) return;
+            try {
+                await a.create_note(text.substring(0, 60), text, 'default', null, '', [], true);
+                qnInput.value = '';
+                qnAdd.disabled = true;
+                showSaved();
+                await loadNotes();
+                qnInput.focus();
+            } catch (e) {}
+        }
+
+        function showSaved() {
+            qnSave.classList.add('visible');
+            setTimeout(function() { qnSave.classList.remove('visible'); }, 2000);
+        }
+
+        qnAdd.addEventListener('click', addNote);
+        qnInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); addNote(); }
+        });
+        qnClose.addEventListener('click', function() { var a = api(); if (a) a.close_quick_notes(); });
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                var active = document.activeElement;
+                if (active && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT')) return;
+                var a = api(); if (a) a.close_quick_notes();
+            }
+        });
+
+        function waitForApi(timeout) {
+            timeout = timeout || 5000;
+            return new Promise(function(resolve, reject) {
+                var start = Date.now();
+                var check = function() {
+                    if (window.pywebview && window.pywebview.api) resolve();
+                    else if (Date.now() - start > timeout) reject();
+                    else requestAnimationFrame(check);
+                };
+                check();
+            });
+        }
+        // Retry mechanism: Quick Notes window API bridge may not be fully ready
+        // even after waitForApi resolves. We retry up to 3 times with delays.
+        var _loadAttempts = 0;
+        var _maxLoadAttempts = 3;
+        async function loadNotesWithRetry() {
+            var a = api();
+            if (!a) {
+                qnList.innerHTML = '<div class="qn-empty">Cargando...</div>';
+                return;
+            }
+            try {
+                var result = await a.get_quick_notes();
+                if (result && Array.isArray(result)) {
+                    allNotes = result;
+                    allNotes.reverse();
+                    renderNotes(qnSearch.value);
+                    return; // Success
+                }
+            } catch (e) {
+                // API call failed
+            }
+            _loadAttempts++;
+            if (_loadAttempts < _maxLoadAttempts) {
+                // Retry after a delay
+                setTimeout(loadNotesWithRetry, 300 * _loadAttempts);
+            } else {
+                // All retries failed
+                qnList.innerHTML = '<div class="qn-empty">Error cargando notas</div>';
+                setTimeout(loadNotesWithRetry, 3000); // Background retry
+            }
+        }
+        waitForApi().then(loadNotesWithRetry).catch(function() {
+            qnList.innerHTML = '<div class="qn-empty">Cargando...</div>';
+            setTimeout(loadNotesWithRetry, 1500);
+        });
+    </script>
+</body>
+</html>
