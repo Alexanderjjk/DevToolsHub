@@ -1068,6 +1068,23 @@ class Api:
     # AUTOSTART (Iniciar con Windows)
     # ============================================
 
+    def _get_real_exe_path(self):
+        """Get the real executable path, whether running from source or from PyInstaller bundle.
+
+        When compiled with PyInstaller (onedir mode), sys.argv[0] points to a temp _MEI path
+        that no longer exists after extraction. sys.executable always points to the real .exe.
+        When running from source (.py), sys.executable points to python.exe, so we fall back
+        to sys.argv[0].
+        """
+        frozen = getattr(sys, 'frozen', False)
+        if frozen:
+            return sys.executable
+        # Running from source: use the script path
+        exe_path = os.path.abspath(sys.argv[0])
+        if exe_path.endswith('.py') or exe_path.endswith('.pyw'):
+            exe_path = os.path.join(os.path.dirname(exe_path), 'DevTools.exe')
+        return exe_path
+
     def get_autostart(self):
         """Check if the app is set to start with Windows."""
         import platform
@@ -1078,7 +1095,20 @@ class Api:
             key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_READ)
             value, _ = winreg.QueryValueEx(key, "GameDevHub")
             winreg.CloseKey(key)
-            return {"enabled": bool(value and value.strip())}
+            enabled = bool(value and value.strip())
+            # Also validate the path exists
+            if enabled:
+                reg_path = value.strip().strip('"').strip()
+                if not os.path.exists(reg_path):
+                    # Path is invalid — clean up the stale registry entry
+                    try:
+                        key2 = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_SET_VALUE)
+                        winreg.DeleteValue(key2, "GameDevHub")
+                        winreg.CloseKey(key2)
+                    except Exception:
+                        pass
+                    enabled = False
+            return {"enabled": enabled}
         except (FileNotFoundError, OSError):
             return {"enabled": False}
 
@@ -1091,9 +1121,10 @@ class Api:
             import winreg
             key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_SET_VALUE)
             if enable:
-                exe_path = os.path.abspath(sys.argv[0])
-                if exe_path.endswith('.py') or exe_path.endswith('.pyw'):
-                    exe_path = os.path.join(os.path.dirname(exe_path), 'DevTools.exe')
+                exe_path = self._get_real_exe_path()
+                if not os.path.exists(exe_path):
+                    return {"success": False, "message": f"No se encontro el ejecutable: {exe_path}"}
+                # Use short path (8.3) to avoid issues with spaces in registry
                 winreg.SetValueEx(key, "GameDevHub", 0, winreg.REG_SZ, f'"{exe_path}"')
             else:
                 try:
@@ -1101,7 +1132,7 @@ class Api:
                 except FileNotFoundError:
                     pass
             winreg.CloseKey(key)
-            return {"success": True, "enabled": enable}
+            return {"success": True, "enabled": enable, "path": exe_path if enable else None}
         except Exception as e:
             return {"success": False, "message": str(e)}
 

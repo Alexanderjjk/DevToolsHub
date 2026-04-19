@@ -43,11 +43,10 @@ async function _initCloseButtonTitle() {
     if (!a) return;
     try {
         var val = await a.get_setting('minimize_to_tray');
-        var en = val !== false && val !== 'false' && val !== null;
+        var en = val === true || val === 'true' || val === 1 || val === '1';
         _updateCloseButtonTitle(en);
     } catch(e) {
-        // Default: enabled
-        _updateCloseButtonTitle(true);
+        _updateCloseButtonTitle(false);
     }
 }
 
@@ -1572,7 +1571,7 @@ function _bindSettingsEvents(body) {
     if (trayCb && trayTgl) {
         var a3 = api();
         if (a3) { a3.get_setting('minimize_to_tray').then(function(val) {
-            var en = val !== false && val !== 'false';
+            var en = val === true || val === 'true' || val === 1 || val === '1';
             trayCb.checked = en; trayTgl.classList.toggle('active', en);
             _updateCloseButtonTitle(en);
         }).catch(function() {}); }

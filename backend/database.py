@@ -1021,8 +1021,7 @@ def get_session_stats() -> dict:
     ).fetchone()[0]
 
     # Streak: consecutive days with at least one focus/pomodoro/free session
-    # Optimizado: una sola query para obtener todos los dias con actividad,
-    # luego calcular la racha desde hoy hacia atras en Python (O(N) en vez de N queries)
+    # Si hoy aún no hay sesión pero ayer sí, contar desde ayer (no romper la racha)
     streak = 0
     try:
         activity_days = set(
@@ -1031,6 +1030,10 @@ def get_session_stats() -> dict:
             ).fetchall()
         )
         check_date = today
+        # If today has no activity yet, start from yesterday so streak isn't broken mid-day
+        if check_date not in activity_days:
+            ts = time.mktime(time.strptime(check_date, '%Y-%m-%d'))
+            check_date = time.strftime('%Y-%m-%d', time.localtime(ts - 86400))
         while check_date in activity_days:
             streak += 1
             ts = time.mktime(time.strptime(check_date, '%Y-%m-%d'))

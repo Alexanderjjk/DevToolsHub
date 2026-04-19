@@ -342,9 +342,9 @@ registerSection('stats', {
     },
 
     unload() {
-        if (this._activeRefresh) { clearInterval(this._activeRefresh); this._activeRefresh = null; }
+        if (this._activeRefresh) { clearTimeout(this._activeRefresh); this._activeRefresh = null; }
         if (this._liveTimerRefresh) { clearInterval(this._liveTimerRefresh); this._liveTimerRefresh = null; }
-        if (this._fgWindowRefresh) { clearInterval(this._fgWindowRefresh); this._fgWindowRefresh = null; }
+        if (this._fgWindowRefresh) { clearTimeout(this._fgWindowRefresh); this._fgWindowRefresh = null; }
         this._apiRef = null;
     },
 
@@ -852,9 +852,12 @@ registerSection('stats', {
 
     _startAutoRefresh(a) {
         var self = this;
-        this._activeRefresh = setInterval(async function() {
+        var refresh = async function() {
             try {
-                if (typeof App !== 'undefined' && App.currentSection !== 'stats') return;
+                if (typeof App !== 'undefined' && App.currentSection !== 'stats') {
+                    self._activeRefresh = setTimeout(refresh, 2000);
+                    return;
+                }
 
                 var results = await Promise.all([
                     a.get_app_usage_active().catch(function() { return []; }),
@@ -875,7 +878,10 @@ registerSection('stats', {
                     }
                 }
             } catch(e) {}
-        }, 2000);
+            // Schedule next only AFTER this one completes
+            self._activeRefresh = setTimeout(refresh, 2000);
+        };
+        refresh();
     },
 
     // ═══════════════════════════════════════════
@@ -919,12 +925,19 @@ registerSection('stats', {
         var self = this;
         var poll = async function() {
             try {
-                if (typeof App !== 'undefined' && App.currentSection !== 'stats') return;
+                if (typeof App !== 'undefined' && App.currentSection !== 'stats') {
+                    self._fgWindowRefresh = setTimeout(poll, 3000);
+                    return;
+                }
                 var info = await apiRef.get_foreground_window_info().catch(function() { return null; });
                 var container = document.getElementById('fg-window-info');
-                if (!container) return;
+                if (!container) {
+                    self._fgWindowRefresh = setTimeout(poll, 3000);
+                    return;
+                }
                 if (!info || info.error) {
                     container.innerHTML = '<p style="font-size:13px;color:var(--text-muted);">No disponible en esta plataforma</p>';
+                    self._fgWindowRefresh = setTimeout(poll, 3000);
                     return;
                 }
                 var appName = info.app_name || 'N/A';
@@ -938,9 +951,10 @@ registerSection('stats', {
                     + '</div>'
                     + '</div>';
             } catch(e) {}
+            // Schedule next only AFTER this one completes
+            self._fgWindowRefresh = setTimeout(poll, 3000);
         };
         poll();
-        this._fgWindowRefresh = setInterval(poll, 3000);
     },
 
     // ═══════════════════════════════════════════

@@ -407,7 +407,7 @@ def _get_minimize_to_tray():
     try:
         from database import get_setting
         val = get_setting('minimize_to_tray')
-        _minimize_to_tray_cache = val not in (False, 'false', '0', 0, None)
+        _minimize_to_tray_cache = val in (True, 'true', 1, '1')
     except Exception:
         _minimize_to_tray_cache = False
     return _minimize_to_tray_cache
