@@ -82,13 +82,19 @@ def _monitor_process(usage_id: str, process: subprocess.Popen):
         else:
             # Eliminar registro si fue menor a 1 segundo
             try:
-                from database import _get_connection
-                _get_connection().execute(
-                    "DELETE FROM app_usage WHERE id = ?", (usage_id,)
-                )
-                _get_connection().commit()
+                from database import delete_app_usage_record
+                delete_app_usage_record(usage_id)
             except Exception:
-                pass
+                # Fallback: si la funcion no existe, usar DB directa con lock
+                try:
+                    from database import _get_connection, _db_lock
+                    with _db_lock:
+                        _get_connection().execute(
+                            "DELETE FROM app_usage WHERE id = ?", (usage_id,)
+                        )
+                        _get_connection().commit()
+                except Exception:
+                    pass
 
 
 def launch_and_track(
@@ -127,13 +133,19 @@ def launch_and_track(
         # Si falla el lanzamiento, limpiar el registro de uso
         if usage_id:
             try:
-                from database import _get_connection
-                _get_connection().execute(
-                    "DELETE FROM app_usage WHERE id = ?", (usage_id,)
-                )
-                _get_connection().commit()
+                from database import delete_app_usage_record
+                delete_app_usage_record(usage_id)
             except Exception:
-                pass
+                # Fallback con lock
+                try:
+                    from database import _get_connection, _db_lock
+                    with _db_lock:
+                        _get_connection().execute(
+                            "DELETE FROM app_usage WHERE id = ?", (usage_id,)
+                        )
+                        _get_connection().commit()
+                except Exception:
+                    pass
         return {"success": False, "message": str(e)}
 
     # 3. Si no se pudo crear el registro, no trackear
@@ -226,9 +238,18 @@ def cleanup_stale_sessions():
                 if duration >= 1:
                     end_app_usage(session['id'], duration)
                 else:
-                    conn = _get_connection()
-                    conn.execute("DELETE FROM app_usage WHERE id = ?", (session['id'],))
-                    conn.commit()
+                    try:
+                        from database import delete_app_usage_record
+                        delete_app_usage_record(session['id'])
+                    except Exception:
+                        try:
+                            from database import _get_connection, _db_lock
+                            with _db_lock:
+                                conn = _get_connection()
+                                conn.execute("DELETE FROM app_usage WHERE id = ?", (session['id'],))
+                                conn.commit()
+                        except Exception:
+                            pass
                 
                 closed_count += 1
             else:
@@ -433,9 +454,18 @@ def _poll_launcher_apps():
                             if duration >= 1:
                                 end_app_usage(session['id'], duration)
                             else:
-                                conn = _get_connection()
-                                conn.execute("DELETE FROM app_usage WHERE id = ?", (session['id'],))
-                                conn.commit()
+                                try:
+                                    from database import delete_app_usage_record
+                                    delete_app_usage_record(session['id'])
+                                except Exception:
+                                    try:
+                                        from database import _db_lock
+                                        with _db_lock:
+                                            conn = _get_connection()
+                                            conn.execute("DELETE FROM app_usage WHERE id = ?", (session['id'],))
+                                            conn.commit()
+                                    except Exception:
+                                        pass
                             print(f"[AutoDetect] Cerrada sesion de '{session.get('launcher_name', lid)}' (ya no corre)")
                         except Exception as e:
                             print(f"[AutoDetect] Error cerrando sesion: {e}")

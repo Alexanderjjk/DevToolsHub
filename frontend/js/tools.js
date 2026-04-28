@@ -189,7 +189,9 @@ registerSection('tools', {
         const iconData = launcher.icon_path || launcher.icon;
         let iconHtml;
         if (iconData) {
-            iconHtml = `<img src="data:image/png;base64,${iconData}" alt="${name}" loading="lazy">`;
+            // Determinar si ya tiene prefijo data: (favicon) o es base64 crudo
+            const src = iconData.startsWith('data:') ? iconData : `data:image/png;base64,${iconData}`;
+            iconHtml = `<img src="${src}" alt="${name}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"><span class="fallback-icon" style="display:none;">${catIcon || '&#128295;'}</span>`;
         } else {
             iconHtml = `<span class="fallback-icon">${catIcon || '&#128295;'}</span>`;
         }
@@ -291,14 +293,17 @@ registerSection('tools', {
         });
 
         container.querySelectorAll('.launcher-card').forEach(card => {
-            card.addEventListener('click', async () => {
+            card.addEventListener('click', async (e) => {
+                // Evitar lanzar si se hizo click en un boton de accion
+                if (e.target.closest('.launcher-card-actions')) return;
                 const id = card.dataset.launcherId;
                 const a = api();
                 if (!a) return;
                 try {
                     const result = await a.launch(id);
                     if (result.success !== false) {
-                        showToast(result.message || 'Lanzado', 'success');
+                        const trackMsg = result.tracked ? ' (tracking activo)' : '';
+                        showToast(result.message || 'Lanzado' + trackMsg, 'success');
                     } else {
                         showToast(result.message || 'Error', 'error');
                     }
@@ -792,19 +797,22 @@ registerSection('tools', {
         }));
 
         const fields = [
-            { id: 'category', label: 'Categoria', type: 'select', options: catOptions }
+            { id: 'name', label: 'Nombre', type: 'text', placeholder: 'Nombre de la herramienta', required: true, value: launcher.name || '' },
+            { id: 'category', label: 'Categoria', type: 'select', options: catOptions, value: launcher.category || 'general' }
         ];
 
-        const values = await showFormModal(`Editar: ${launcher.name}`, fields);
+        const values = await showFormModal(`Editar: ${launcher.name}`, fields, 'Guardar');
         if (!values) return;
 
         const a = api();
         if (!a) return;
 
         try {
-            await a.update_launcher(launcher.id, category=values.category);
+            const newName = values.name && values.name.trim() ? values.name.trim() : undefined;
+            await a.update_launcher(launcher.id, newName, undefined, values.category);
+            if (newName) launcher.name = newName;
             launcher.category = values.category;
-            showToast('Categoria actualizada', 'success');
+            showToast('Herramienta actualizada', 'success');
             this._renderCategoryTabs();
             this._renderLaunchers();
         } catch (err) {

@@ -28,17 +28,42 @@ import threading as _threading
 _db_lock = _threading.Lock()
 
 
+def _db_execute_safe(func):
+    """Decorador para operaciones DB con thread-safety usando _db_lock."""
+    def wrapper(*args, **kwargs):
+        with _db_lock:
+            return func(*args, **kwargs)
+    wrapper.__name__ = func.__name__
+    wrapper.__doc__ = func.__doc__
+    return wrapper
+
+
+def _db_write(operation_func):
+    """Decorador para operaciones de escritura DB que necesitan thread-safety.
+    Adquiere _db_lock durante toda la operacion execute+commit para evitar
+    race conditions con el poller thread de app_usage_tracker."""
+    def wrapper(*args, **kwargs):
+        with _db_lock:
+            return operation_func(*args, **kwargs)
+    wrapper.__name__ = operation_func.__name__
+    wrapper.__doc__ = operation_func.__doc__
+    return wrapper
+
+
 def _get_connection() -> sqlite3.Connection:
     """Return a singleton connection to the SQLite database."""
     global _connection
     if _connection is None:
-        os.makedirs(_DB_DIR, exist_ok=True)
-        _connection = sqlite3.connect(_DB_PATH, check_same_thread=False)
-        _connection.row_factory = sqlite3.Row
-        _connection.execute("PRAGMA journal_mode=WAL")
-        _connection.execute("PRAGMA foreign_keys=ON")
-        # Evitar 'database is locked' cuando el poller y la API escriben a la vez
-        _connection.execute("PRAGMA busy_timeout=5000")
+        with _db_lock:
+            # Double-check despues de adquirir el lock
+            if _connection is None:
+                os.makedirs(_DB_DIR, exist_ok=True)
+                _connection = sqlite3.connect(_DB_PATH, check_same_thread=False)
+                _connection.row_factory = sqlite3.Row
+                _connection.execute("PRAGMA journal_mode=WAL")
+                _connection.execute("PRAGMA foreign_keys=ON")
+                # Evitar 'database is locked' cuando el poller y la API escriben a la vez
+                _connection.execute("PRAGMA busy_timeout=5000")
     return _connection
 
 
@@ -210,6 +235,7 @@ def get_doc_link(doc_id: str) -> dict | None:
     return _row_to_dict(row)
 
 
+@_db_write
 def add_doc_link(
     name: str,
     url: str,
@@ -236,6 +262,7 @@ def add_doc_link(
     return get_doc_link(doc_id)
 
 
+@_db_write
 def update_doc_link(doc_id: str, **kwargs) -> dict | None:
     if not kwargs:
         return get_doc_link(doc_id)
@@ -254,6 +281,7 @@ def update_doc_link(doc_id: str, **kwargs) -> dict | None:
     return get_doc_link(doc_id)
 
 
+@_db_write
 def delete_doc_link(doc_id: str) -> bool:
     conn = _get_connection()
     cursor = conn.execute("DELETE FROM doc_links WHERE id = ?", (doc_id,))
@@ -294,6 +322,7 @@ def get_app_shortcut(shortcut_id: str) -> dict | None:
     return _row_to_dict(row)
 
 
+@_db_write
 def add_app_shortcut(
     name: str,
     exe_path: str,
@@ -315,6 +344,7 @@ def add_app_shortcut(
     return get_app_shortcut(shortcut_id)
 
 
+@_db_write
 def update_app_shortcut(shortcut_id: str, **kwargs) -> dict | None:
     if not kwargs:
         return get_app_shortcut(shortcut_id)
@@ -336,6 +366,7 @@ def update_app_shortcut(shortcut_id: str, **kwargs) -> dict | None:
     return get_app_shortcut(shortcut_id)
 
 
+@_db_write
 def delete_app_shortcut(shortcut_id: str) -> bool:
     conn = _get_connection()
     cursor = conn.execute("DELETE FROM app_shortcuts WHERE id = ?", (shortcut_id,))
@@ -401,6 +432,7 @@ def get_note(note_id: str) -> dict | None:
     return _row_to_dict(row)
 
 
+@_db_write
 def create_note(
     title: str,
     content: str = '',
@@ -438,6 +470,7 @@ def create_note(
     return get_note(note_id)
 
 
+@_db_write
 def update_note(note_id: str, **kwargs) -> dict | None:
     if not kwargs:
         return get_note(note_id)
@@ -468,6 +501,7 @@ def update_note(note_id: str, **kwargs) -> dict | None:
     return get_note(note_id)
 
 
+@_db_write
 def delete_note(note_id: str) -> bool:
     conn = _get_connection()
     # Recursively collect ALL descendant IDs (children, grandchildren, etc.)
@@ -546,6 +580,7 @@ def get_quick_notes() -> list:
     )
 
 
+@_db_write
 def import_note_from_file(file_path: str) -> dict | None:
     """Import a note from a .md file.
 
@@ -716,6 +751,7 @@ def get_all_tags() -> list:
     return result
 
 
+@_db_write
 def duplicate_note(note_id: str) -> dict | None:
     """Duplicate a note (and its child sub-pages) under a new parent.
 
@@ -785,6 +821,7 @@ def get_flowchart(flowchart_id: str) -> dict | None:
     return _row_to_dict(row)
 
 
+@_db_write
 def create_flowchart(
     name: str,
     data,
@@ -804,6 +841,7 @@ def create_flowchart(
     return get_flowchart(flowchart_id)
 
 
+@_db_write
 def update_flowchart(flowchart_id: str, **kwargs) -> dict | None:
     if not kwargs:
         return get_flowchart(flowchart_id)
@@ -822,6 +860,7 @@ def update_flowchart(flowchart_id: str, **kwargs) -> dict | None:
     return get_flowchart(flowchart_id)
 
 
+@_db_write
 def delete_flowchart(flowchart_id: str) -> bool:
     conn = _get_connection()
     cursor = conn.execute("DELETE FROM flowcharts WHERE id = ?", (flowchart_id,))
@@ -863,6 +902,7 @@ def get_task(task_id: str) -> dict | None:
     return _row_to_dict(row)
 
 
+@_db_write
 def create_task(
     title: str,
     description: str = '',
@@ -886,6 +926,7 @@ def create_task(
     return get_task(task_id)
 
 
+@_db_write
 def update_task(task_id: str, **kwargs) -> dict | None:
     if not kwargs:
         return get_task(task_id)
@@ -899,7 +940,8 @@ def update_task(task_id: str, **kwargs) -> dict | None:
     # Auto-set completed_at when status changes to 'done'
     if updates.get('status') == 'done' and 'completed_at' not in updates:
         updates['completed_at'] = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.localtime())
-    if updates.get('status') != 'done':
+    # Solo limpiar completed_at si el status cambia explicitamente a un estado no-done
+    if 'status' in updates and updates['status'] != 'done' and 'completed_at' not in kwargs:
         updates['completed_at'] = None
     # Serialise subtasks
     if 'subtasks' in updates and isinstance(updates['subtasks'], (list, tuple)):
@@ -912,6 +954,7 @@ def update_task(task_id: str, **kwargs) -> dict | None:
     return get_task(task_id)
 
 
+@_db_write
 def delete_task(task_id: str) -> bool:
     conn = _get_connection()
     cursor = conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
@@ -961,6 +1004,7 @@ def get_sessions() -> list:
     )
 
 
+@_db_write
 def log_session(
     session_type: str,
     duration_seconds: int,
@@ -1146,6 +1190,7 @@ def get_activity_calendar(days=90) -> list:
     return result
 
 
+@_db_write
 def clear_session_history() -> bool:
     conn = _get_connection()
     try:
@@ -1156,6 +1201,7 @@ def clear_session_history() -> bool:
         return False
 
 
+@_db_write
 def delete_session(session_id: str) -> bool:
     conn = _get_connection()
     cursor = conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
@@ -1214,6 +1260,7 @@ def get_all_settings() -> dict:
     return result
 
 
+@_db_write
 def reset_all_data() -> bool:
     """Delete ALL data from every table, restoring the app to a clean state.
 
@@ -1474,6 +1521,7 @@ def get_app_usage_history(limit: int = 50, launcher_id: str = None) -> list:
     return _rows_to_dicts(conn.execute(sql, params).fetchall())
 
 
+@_db_write
 def delete_app_usage_history(launcher_id: str = None) -> bool:
     """Delete usage history. If launcher_id is given, only for that app."""
     conn = _get_connection()
@@ -1484,5 +1532,17 @@ def delete_app_usage_history(launcher_id: str = None) -> bool:
             conn.execute("DELETE FROM app_usage")
         conn.commit()
         return True
+    except sqlite3.Error:
+        return False
+
+
+@_db_write
+def delete_app_usage_record(usage_id: str) -> bool:
+    """Delete a single app_usage record by ID. Thread-safe."""
+    conn = _get_connection()
+    try:
+        cursor = conn.execute("DELETE FROM app_usage WHERE id = ?", (usage_id,))
+        conn.commit()
+        return cursor.rowcount > 0
     except sqlite3.Error:
         return False

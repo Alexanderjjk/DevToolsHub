@@ -20,6 +20,9 @@ registerSection('docs', {
                 <div class="section-header">
                     <h2>Documentacion</h2>
                     <div class="section-header-actions">
+                        <button class="btn btn-secondary btn-sm" id="btn-download-all-favicons" title="Descargar favicons para todos los enlaces que no tienen icono">
+                            &#127760; Descargar favicons
+                        </button>
                         <button class="btn btn-primary btn-sm" id="btn-add-doc">+ Agregar enlace</button>
                     </div>
                 </div>
@@ -59,6 +62,14 @@ registerSection('docs', {
         // Busqueda
         const search = document.getElementById('docs-search');
         if (search) search.addEventListener('input', debounce(() => this._renderDocs(search.value), 300));
+
+        // Boton descargar todos los favicons
+        const dlAllBtn = document.getElementById('btn-download-all-favicons');
+        if (dlAllBtn) {
+            dlAllBtn.addEventListener('click', async () => {
+                await this._downloadAllFavicons();
+            });
+        }
     },
 
     unload() {},
@@ -153,21 +164,80 @@ registerSection('docs', {
             const results = await a.batch_download_favicons(items);
             if (!results) return;
 
-            let updated = false;
+            let updatedCount = 0;
             for (const doc of missing) {
                 const favicon = results[doc.id];
                 if (favicon) {
-                    await a.set_doc_icon(doc.id, icon_path=favicon).catch(() => {});
+                    await a.set_doc_icon(doc.id, '', favicon).catch(() => {});
                     doc.icon_path = favicon;
-                    updated = true;
+                    updatedCount++;
                 }
             }
-            if (updated) {
-                console.log('[docs] Favicons descargados para', missing.length, 'docs');
+            if (updatedCount > 0) {
+                console.log('[docs] Favicons descargados para', updatedCount, 'docs');
                 this._renderDocs();
             }
         } catch (e) {
             console.warn('[docs] Error auto-descargando favicons:', e);
+        }
+    },
+
+    // ---------------------------------------------------------------
+    //  DOWNLOAD ALL FAVICONS (boton manual)
+    // ---------------------------------------------------------------
+
+    async _downloadAllFavicons() {
+        const a = api();
+        if (!a) {
+            showToast('API no disponible', 'error');
+            return;
+        }
+
+        // Buscar docs que necesitan favicon (sin icon_path)
+        const missing = this._docs.filter(d => d.url && !d.icon_path);
+        if (missing.length === 0) {
+            showToast('Todos los enlaces ya tienen favicon', 'success');
+            return;
+        }
+
+        const btn = document.getElementById('btn-download-all-favicons');
+        const origHtml = btn ? btn.innerHTML : '';
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-sm"></span> Descargando...';
+        }
+
+        try {
+            // Procesar en lotes de 5 para no saturar
+            const batchSize = 5;
+            let totalUpdated = 0;
+            for (let i = 0; i < missing.length; i += batchSize) {
+                const batch = missing.slice(i, i + batchSize);
+                const items = batch.map(d => ({ id: d.id, url: d.url }));
+                const results = await a.batch_download_favicons(items);
+                if (results) {
+                    for (const doc of batch) {
+                        const favicon = results[doc.id];
+                        if (favicon) {
+                            await a.set_doc_icon(doc.id, '', favicon).catch(() => {});
+                            doc.icon_path = favicon;
+                            totalUpdated++;
+                        }
+                    }
+                }
+            }
+            if (totalUpdated > 0) {
+                showToast(`Se descargaron ${totalUpdated} favicon${totalUpdated !== 1 ? 's' : ''}`, 'success');
+                this._renderDocs();
+            } else {
+                showToast('No se pudieron descargar favicons. Intenta con iconos locales.', 'warning');
+            }
+        } catch (e) {
+            showToast('Error descargando favicons: ' + (e.message || e), 'error');
+        }
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = origHtml;
         }
     },
 
@@ -206,12 +276,10 @@ registerSection('docs', {
     _renderDocIcon(doc) {
         // Priority: icon_path (favicon) > icon_name (emoji) > category default
         if (doc.icon_path) {
-            // Determine if it's a data URI
-            if (doc.icon_path.startsWith('data:')) {
-                return `<div class="doc-item-icon doc-item-icon-favicon"><img src="${escapeHtml(doc.icon_path)}" alt="" loading="lazy" onerror="this.parentElement.innerHTML='${escapeHtml(this._getCategoryIcon(doc.category) || '\\uD83D\\uDCC4')}'"></div>`;
-            }
-            // Assume it's base64 raw
-            return `<div class="doc-item-icon doc-item-icon-favicon"><img src="data:image/png;base64,${escapeHtml(doc.icon_path)}" alt="" loading="lazy"></div>`;
+            // Determinar si ya tiene prefijo data: o es base64 crudo
+            const src = doc.icon_path.startsWith('data:') ? doc.icon_path : `data:image/png;base64,${doc.icon_path}`;
+            const fallbackEmoji = this._getCategoryIcon(doc.category) || '\uD83D\uDCC4';
+            return `<div class="doc-item-icon doc-item-icon-favicon"><img src="${escapeHtml(src)}" alt="" loading="lazy" onerror="this.style.display='none';this.parentElement.innerHTML='${escapeHtml(fallbackEmoji)}';"></div>`;
         }
         const emoji = doc.icon_name || doc.icon || this._getCategoryIcon(doc.category);
         return `<div class="doc-item-icon">${escapeHtml(emoji)}</div>`;
@@ -309,7 +377,7 @@ registerSection('docs', {
                     <p>${escapeHtml(d.desc || d.url)}</p>
                     <div class="doc-item-meta">
                         <span class="doc-item-category">${escapeHtml(catIcon)} ${escapeHtml(catId)}</span>
-                        ${d.icon_path ? '<span class="doc-favicon-badge" title="Favicon descargado automaticamente">&#10003; favicon</span>' : ''}
+                        ${d.icon_path ? '<span class="doc-favicon-badge" title="Favicon descargado automaticamente">\u2713 favicon</span>' : ''}
                     </div>
                 </div>
                 <div class="doc-item-actions">
@@ -764,7 +832,7 @@ registerSection('docs', {
                 btn.addEventListener('click', async () => {
                     const emoji = btn.dataset.emoji;
                     try {
-                        await a.set_doc_icon(docId, icon_path='', icon_name=emoji);
+                        await a.set_doc_icon(docId, '', emoji);
                         doc.icon_name = emoji;
                         doc.icon_path = '';
                         doc.icon = emoji;
@@ -807,7 +875,7 @@ registerSection('docs', {
             try {
                 const result = await a.download_doc_favicon(doc.url);
                 if (result && result.success && result.icon_path) {
-                    await a.set_doc_icon(docId, icon_path=result.icon_path, icon_name='');
+                    await a.set_doc_icon(docId, result.icon_path, '');
                     doc.icon_path = result.icon_path;
                     doc.icon_name = '';
                     doc.icon = '';

@@ -46,6 +46,9 @@ def _get_ssl_context():
     global _ssl_ctx
     if _ssl_ctx is None:
         _ssl_ctx = ssl.create_default_context()
+        # Nota: Se mantiene check_hostname=False y CERT_NONE porque muchos
+        # sitios de desarrollo y documentacion usan certificados auto-firmados.
+        # En un entorno de produccion, esto deberia ser mas restrictivo.
         _ssl_ctx.check_hostname = False
         _ssl_ctx.verify_mode = ssl.CERT_NONE
     return _ssl_ctx

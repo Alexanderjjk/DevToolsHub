@@ -421,7 +421,7 @@ function closeModal(result) {
 // ============================================================
 // FORM MODAL
 // ============================================================
-function showFormModal(title, fields) {
+function showFormModal(title, fields, submitText = 'Crear') {
     return new Promise((resolve) => {
         const overlay = document.createElement('div');
         overlay.className = 'modal-overlay';
@@ -432,14 +432,18 @@ function showFormModal(title, fields) {
                 <div class="modal-body" style="padding:20px 24px;">
                     ${fields.map(f => {
                         const required = f.required ? 'required' : '';
+                        const value = f.value ? `value="${escapeHtml(f.value)}"` : '';
                         if (f.type === 'textarea') {
                             return `<div style="margin-bottom:14px;">
                                 <label style="display:block;font-size:12px;font-weight:600;color:#8888a0;text-transform:uppercase;margin-bottom:6px;">${escapeHtml(f.label)}</label>
-                                <textarea id="form-${f.id}" placeholder="${escapeHtml(f.placeholder || '')}" class="selectable" rows="3" ${required}></textarea>
+                                <textarea id="form-${f.id}" placeholder="${escapeHtml(f.placeholder || '')}" class="selectable" rows="3" ${required}>${escapeHtml(f.value || '')}</textarea>
                             </div>`;
                         }
                         if (f.type === 'select') {
-                            const opts = (f.options || []).map(o => `<option value="${o.value}">${escapeHtml(o.label)}</option>`).join('');
+                            const opts = (f.options || []).map(o => {
+                                const selected = f.value && o.value === f.value ? 'selected' : '';
+                                return `<option value="${o.value}" ${selected}>${escapeHtml(o.label)}</option>`;
+                            }).join('');
                             return `<div style="margin-bottom:14px;">
                                 <label style="display:block;font-size:12px;font-weight:600;color:#8888a0;text-transform:uppercase;margin-bottom:6px;">${escapeHtml(f.label)}</label>
                                 <select id="form-${f.id}" style="width:100%;padding:8px 12px;background:#252540;border:1px solid #2a2a45;border-radius:8px;color:#e8e8ed;font-size:14px;">${opts}</select>
@@ -447,13 +451,13 @@ function showFormModal(title, fields) {
                         }
                         return `<div style="margin-bottom:14px;">
                             <label style="display:block;font-size:12px;font-weight:600;color:#8888a0;text-transform:uppercase;margin-bottom:6px;">${escapeHtml(f.label)}</label>
-                            <input type="${f.type || 'text'}" id="form-${f.id}" placeholder="${escapeHtml(f.placeholder || '')}" ${required}>
+                            <input type="${f.type || 'text'}" id="form-${f.id}" placeholder="${escapeHtml(f.placeholder || '')}" ${value} ${required}>
                         </div>`;
                     }).join('')}
                 </div>
                 <div class="modal-footer">
                     <button class="btn btn-secondary" id="form-cancel" type="button">Cancelar</button>
-                    <button class="btn btn-primary" id="form-submit" type="button">Crear</button>
+                    <button class="btn btn-primary" id="form-submit" type="button">${escapeHtml(submitText)}</button>
                 </div>
             </div>`;
 
@@ -780,7 +784,7 @@ async function executeGlobalSearch(query) {
             html += '<div class="global-search-category"><span class="global-search-cat-icon">&#128295;</span> Launcher</div>';
             html += filteredLaunchers.slice(0, 5).map(l => {
                 const iconHtml = l.icon_path
-                    ? `<img src="data:image/png;base64,${l.icon_path}" style="width:16px;height:16px;border-radius:3px;">`
+                    ? `<img src="${l.icon_path.startsWith('data:') ? l.icon_path : 'data:image/png;base64,' + l.icon_path}" style="width:16px;height:16px;border-radius:3px;">`
                     : '';
                 return `<div class="global-search-result-item" data-action="launch" data-id="${escapeHtml(l.id)}">
                     <span class="gsr-icon">${iconHtml || '&#128295;'}</span>
@@ -796,7 +800,7 @@ async function executeGlobalSearch(query) {
             html += '<div class="global-search-category"><span class="global-search-cat-icon">&#128214;</span> Docs</div>';
             html += docs.slice(0, 5).map(d => {
                 const iconHtml = d.icon_path
-                    ? `<img src="data:image/png;base64,${d.icon_path}" style="width:16px;height:16px;border-radius:3px;">`
+                    ? `<img src="${d.icon_path.startsWith('data:') ? d.icon_path : 'data:image/png;base64,' + d.icon_path}" style="width:16px;height:16px;border-radius:3px;">`
                     : '';
                 return `<div class="global-search-result-item" data-action="open-url" data-url="${escapeHtml(d.url)}">
                     <span class="gsr-icon">${iconHtml || '&#128214;'}</span>
@@ -1310,7 +1314,7 @@ registerSection('home', {
             } else {
                 grid.innerHTML = launchers.slice(0, 8).map(l => `
                     <div class="launcher-tile" data-launcher-id="${escapeHtml(l.id)}" title="Click para ejecutar">
-                        <div class="launcher-tile-icon">${l.icon_path ? `<img src="data:image/png;base64,${l.icon_path}" alt="">` : '<span class="fallback-icon">&#128295;</span>'}</div>
+                        <div class="launcher-tile-icon">${l.icon_path ? `<img src="${l.icon_path.startsWith('data:') ? l.icon_path : 'data:image/png;base64,' + l.icon_path}" alt="">` : '<span class="fallback-icon">&#128295;</span>'}</div>
                         <div class="launcher-tile-info"><h4>${escapeHtml(l.name)}</h4><p>${escapeHtml(l.exe_path || l.path || '')}</p></div>
                     </div>`).join('');
                 grid.querySelectorAll('.launcher-tile').forEach(tile => {
@@ -1331,7 +1335,7 @@ registerSection('home', {
         bar.style.display = 'block';
         bar.innerHTML = active.map(app => {
             const l = launchers.find(x => x.id === app.launcher_id);
-            const icon = l && l.icon_path ? `<img src="data:image/png;base64,${l.icon_path}" style="width:18px;height:18px;border-radius:3px;">` : '<span style="font-size:16px;">&#128295;</span>';
+            const icon = l && l.icon_path ? `<img src="${l.icon_path.startsWith('data:') ? l.icon_path : 'data:image/png;base64,' + l.icon_path}" style="width:18px;height:18px;border-radius:3px;">` : '<span style="font-size:16px;">&#128295;</span>';
             return `<div style="display:inline-flex;align-items:center;gap:8px;padding:6px 12px;background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.2);border-radius:8px;margin-right:8px;">
                 <span style="width:8px;height:8px;border-radius:50%;background:#22c55e;animation:pulse 1.5s infinite;"></span>
                 ${icon}

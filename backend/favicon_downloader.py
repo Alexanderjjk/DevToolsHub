@@ -54,15 +54,69 @@ def _download_bytes(url: str) -> bytes | None:
             data = resp.read()
             if len(data) > _MAX_SIZE or len(data) < 4:
                 return None
-            # Verificar que es una imagen (PNG, ICO, GIF, JPEG magic bytes)
-            if data[:4] not in (
-                b'\x89PNG',       # PNG
-                b'\x00\x00\x01\x00',  # ICO
-                b'GIF8',          # GIF
-                b'\xff\xd8\xff',  # JPEG
-            ):
+            # Verificar que es una imagen (PNG, ICO, GIF, JPEG, SVG, WebP, BMP)
+            # Cada formato se valida con su longitud correcta de magic bytes
+            valid_prefix = (
+                data[:4] == b'\x89PNG' or           # PNG
+                data[:4] == b'\x00\x00\x01\x00' or  # ICO
+                data[:4] == b'GIF8' or               # GIF
+                data[:3] == b'\xff\xd8\xff' or       # JPEG (3 bytes)
+                data[:4] == b'RIFF' or               # WebP (RIFF header)
+                data[:2] == b'BM' or                 # BMP (2 bytes)
+                data[:5] == b'<?xml' or              # SVG (XML prefix)
+                data[:4] == b'<svg' or               # SVG (direct)
+                b'<svg' in data[:200]                # SVG (with whitespace)
+            )
+            if not valid_prefix:
                 return None
             return data
+    except Exception:
+        return None
+
+
+def _detect_mime_type(data: bytes) -> str:
+    """Detecta el tipo MIME de una imagen a partir de sus bytes."""
+    if data[:4] == b'\x89PNG':
+        return 'image/png'
+    elif data[:4] == b'\x00\x00\x01\x00':
+        return 'image/x-icon'
+    elif data[:4] == b'GIF8':
+        return 'image/gif'
+    elif data[:3] == b'\xff\xd8\xff':
+        return 'image/jpeg'
+    elif data[:4] == b'RIFF':
+        return 'image/webp'
+    elif b'<svg' in data[:200]:
+        return 'image/svg+xml'
+    elif data[:2] == b'BM':
+        return 'image/bmp'
+    return 'image/png'  # fallback
+
+
+def _convert_ico_to_png(data: bytes) -> bytes | None:
+    """Convierte datos ICO a PNG usando Pillow si esta disponible.
+    Esto asegura compatibilidad con WebView2 que no siempre renderiza ICO data URIs."""
+    try:
+        from PIL import Image
+        import io
+        img = Image.open(io.BytesIO(data))
+        # Seleccionar el frame mas grande si es multi-page ICO
+        if hasattr(img, 'n_frames') and img.n_frames > 1:
+            best = 0
+            best_size = 0
+            for i in range(img.n_frames):
+                img.seek(i)
+                s = img.size[0] * img.size[1]
+                if s > best_size:
+                    best_size = s
+                    best = i
+            img.seek(best)
+        img = img.convert('RGBA')
+        if img.size[0] != 64 or img.size[1] != 64:
+            img = img.resize((64, 64), Image.LANCZOS)
+        buf = io.BytesIO()
+        img.save(buf, format='PNG')
+        return buf.getvalue()
     except Exception:
         return None
 
@@ -93,7 +147,7 @@ def download_favicon(url: str) -> dict:
     if data:
         b64 = _bytes_to_b64(data)
         # Google retorna PNG, pero a veces un pixel transparente de 1x1
-        if len(data) > 100:  # descartar imagenes triviales
+        if len(data) > 50:  # descartar imagenes triviales (reducido de 100)
             print(f"[Favicon] Google OK para {domain} ({len(data)} bytes)")
             return {
                 "success": True,
@@ -105,11 +159,24 @@ def download_favicon(url: str) -> dict:
     direct_url = f"https://{domain}/favicon.ico"
     data = _download_bytes(direct_url)
     if data:
+        mime = _detect_mime_type(data)
+        # Si es ICO, convertir a PNG para compatibilidad con WebView2
+        if mime == 'image/x-icon':
+            png_data = _convert_ico_to_png(data)
+            if png_data:
+                b64 = _bytes_to_b64(png_data)
+                print(f"[Favicon] Direct OK (ICO->PNG) para {domain} ({len(png_data)} bytes)")
+                return {
+                    "success": True,
+                    "icon_path": f"data:image/png;base64,{b64}",
+                    "method": "direct",
+                }
+        # Para otros formatos, usar tal cual
         b64 = _bytes_to_b64(data)
-        print(f"[Favicon] Direct OK para {domain} ({len(data)} bytes)")
+        print(f"[Favicon] Direct OK para {domain} ({len(data)} bytes, {mime})")
         return {
             "success": True,
-            "icon_path": f"data:image/x-icon;base64,{b64}",
+            "icon_path": f"data:{mime};base64,{b64}",
             "method": "direct",
         }
 

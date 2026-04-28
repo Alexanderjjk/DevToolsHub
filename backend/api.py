@@ -98,7 +98,7 @@ TASKS_CATEGORIES = [
 
 TASKS_PRIORITIES = ["low", "medium", "high", "urgent"]
 
-TASKS_STATES = ["pending", "in_progress", "done", "archived"]
+TASKS_STATES = ["backlog", "pending", "in_progress", "done", "archived"]
 
 
 # ---------------------------------------------------------------------------
@@ -366,7 +366,7 @@ class Api:
     def get_task(self, task_id):
         return get_task(task_id)
 
-    def create_task(self, title="", description="", status="todo", priority="medium", category_id="general", due_date=None):
+    def create_task(self, title="", description="", status="backlog", priority="medium", category_id="general", due_date=None):
         return create_task(
             title,
             description,
@@ -849,8 +849,7 @@ class Api:
         except Exception:
             pass
 
-        OPENFILENAME = ctypes.Structure if not hasattr(ctypes, 'Structure') else ctypes.Structure
-
+        # Note: OPENFILENAMEW struct definition (ctypes.Structure is always available)
         class OPENFILENAMEW(ctypes.Structure):
             _fields_ = [
                 ('lStructSize', wintypes.DWORD),
